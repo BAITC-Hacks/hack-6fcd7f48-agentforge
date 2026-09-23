@@ -349,7 +349,9 @@ def _node_records(
                     f"Роль не определена: плательщиков — {in_degree}, получателей — {out_degree}."
                 )
         if pass_through is not None and pass_through > 1:
-            if _number(pass_through, 2) == "1":
+            if role == "transit":
+                evidence += " Баланс неполон."
+            elif _number(pass_through, 2) == "1":
                 evidence += " Выход немного выше входа; баланс неполон."
             else:
                 evidence += f" Выход выше входа; отношение {_number(pass_through, 2)}. Баланс неполон."
@@ -430,7 +432,7 @@ def _prioritize(records: list[dict]) -> tuple[list[dict], list[dict]]:
             "role": n["role"],
             "priority_score": n["priority_score"],
             "why": (
-                f"{n['evidence']} Исходных клиентов с путями до узла — {n['seed_source_count']}; "
+                f"Исходных клиентов с путями до узла — {n['seed_source_count']}; "
                 f"плательщиков — {n['in_degree']}; вход {_money_text(n['in_kzt'])}. "
                 f"Крупнейшему получателю отправлено {_number(n['largest_out_share'] * 100, 1)}% исходящей суммы. "
                 "Веса приоритета: пути 35%, плательщики 30%, вход 20%, концентрация пересылки 15%. "
@@ -484,7 +486,7 @@ def _cluster_records(
                 f"Гипотеза: {purpose}. Исходных узлов: {n_seed}; внутренний оборот "
                 f"{_money_text(internal)}. Кандидаты: сбор {n_collect}, распределение "
                 f"{n_distribute}, транзит {n_transit}. Чаще всего: {role_label[primary]} "
-                f"({int(counts.iloc[0])} узлов)."
+                f"(узлов — {int(counts.iloc[0])})."
             )
         clusters.append(
             {
