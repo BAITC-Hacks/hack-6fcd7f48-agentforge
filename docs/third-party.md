@@ -49,4 +49,4 @@
 Dataset организаторов: [архив](https://drive.google.com/file/d/1yHdWaSb6gwPAUrqco-KrwR2U_YhzFQFT/view), [README dataset](https://drive.google.com/file/d/1ro-SiY042jv7De0h7tXBDyY8ZKdHz_US/view). Файлы разрешены исключительно для хакатона; отдельная публичная лицензия набора не заявлена. Не включать исходные Parquet в коммиты и не распространять за пределами условий организаторов. Fetch использует публичную ссылку Google Drive без участнического аккаунта, cookie или ключа. Другие внешние API, модели и платные сервисы не используются.
 
 
-В чистой локальной копии `uv sync --frozen` установил 30 Python packages, `npm ci` — 193 npm packages; `npm audit` сообщил 0 уязвимостей. Для разработки и подготовки решения использовался Codex (Astra, Sol, Luna); это не runtime dependency и для запуска приложения Codex не требуется.
+Для разработки использовался Codex; он не является зависимостью и для запуска не нужен.
