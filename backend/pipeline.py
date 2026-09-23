@@ -200,6 +200,37 @@ def _build_graph(
     return graph, communities, components
 
 
+def _seed_paths(graph: nx.DiGraph, nodes_df: pd.DataFrame) -> dict[int, dict[int, list[str]]]:
+    """One stable shortest path per seed, using only edges to a greater depth.
+
+    This measures observed reachability, not the provenance of particular money.
+    The depth restriction prevents cycles from spreading seed labels backwards.
+    """
+    info = nodes_df.set_index("gid")
+    paths: dict[int, dict[int, list[str]]] = {}
+    for gid in sorted(graph, key=lambda node: (int(info.at[node, "depth"]), node)):
+        paths[gid] = {}
+        if bool(info.at[gid, "is_seed"]):
+            paths[gid][gid] = [str(gid)]
+            continue
+        for parent in sorted(graph.predecessors(gid)):
+            if info.at[parent, "depth"] >= info.at[gid, "depth"]:
+                continue
+            for seed, prefix in paths[parent].items():
+                candidate = prefix + [str(gid)]
+                previous = paths[gid].get(seed)
+                if previous is None or (len(candidate), tuple(map(int, candidate))) < (
+                    len(previous),
+                    tuple(map(int, previous)),
+                ):
+                    paths[gid][seed] = candidate
+    return paths
+
+
+def _collects(in_degree: int, out_degree: int) -> bool:
+    return in_degree >= 3 and (out_degree <= 2 or in_degree >= 2 * out_degree)
+
+
 def _node_records(
     graph: nx.DiGraph,
     nodes_df: pd.DataFrame,
@@ -210,8 +241,8 @@ def _node_records(
     cluster_of = {gid: index + 1 for index, group in enumerate(communities) for gid in group}
     component_of = {gid: index + 1 for index, group in enumerate(components) for gid in group}
     pagerank = _pagerank(graph)
-    max_pagerank = max(pagerank.values())
     node_info = nodes_df.set_index("gid")
+    seed_paths = _seed_paths(graph, nodes_df)
     records: list[dict] = []
     for gid in sorted(graph):
         pred = graph.pred[gid]
@@ -233,21 +264,22 @@ def _node_records(
             )
         in_concentration = sum((v["weight"] / in_kzt) ** 2 for v in incoming) if in_kzt else 0.0
         out_concentration = sum((v["weight"] / out_kzt) ** 2 for v in outgoing) if out_kzt else 0.0
+        observed_paths = [path for seed, path in seed_paths[gid].items() if seed != gid]
+        observed_paths.sort(key=lambda path: (len(path), tuple(map(int, path))))
+        seed_source_count = len(observed_paths)
+        collecting_branches = sum(
+            not bool(node_info.at[parent, "is_seed"])
+            and int(node_info.at[parent, "depth"]) < depth
+            and _collects(graph.in_degree(parent), graph.out_degree(parent))
+            for parent in pred
+        )
+        outgoing_communities = len({cluster_of[recipient] for recipient in succ})
         # Ordered rules: the first matching structural hypothesis is the primary role.
-        if in_degree >= 3 and out_degree >= 3 and pagerank[gid] >= max_pagerank * 0.15:
-            role = "coordinator"
-            confidence = (
-                0.55
-                + 0.15 * _scale(in_degree, 10)
-                + 0.15 * _scale(out_degree, 10)
-                + 0.15 * _scale(pagerank[gid], max_pagerank)
-            )
-            evidence = f"Связующий узел: {in_degree} плательщиков, {out_degree} получателей; PageRank {pagerank[gid]:.4f}."
-        elif in_degree >= 5 and (in_degree >= out_degree or out_degree <= 2):
+        if _collects(in_degree, out_degree):
             role = "consolidator"
             confidence = 0.55 + 0.3 * _scale(in_degree, 20) + 0.15 * (1 - in_concentration)
             evidence = f"Признаки сбора: {in_degree} плательщиков, вход {in_kzt:,.0f} KZT, выход {out_kzt:,.0f} KZT."
-        elif out_degree >= 5 and out_degree > in_degree:
+        elif out_degree >= 5 and out_degree >= 2 * max(in_degree, 1):
             role = "distributor"
             confidence = 0.55 + 0.3 * _scale(out_degree, 40) + 0.15 * (1 - out_concentration)
             evidence = (
@@ -266,6 +298,25 @@ def _node_records(
                 + 0.15 * _scale(in_degree + out_degree, 10)
             )
             evidence = f"Признаки транзита: вход {in_kzt:,.0f}, выход {out_kzt:,.0f} KZT; доля выхода {pass_through:.2f}."
+        elif (
+            not is_seed
+            and seed_source_count >= 2
+            and collecting_branches >= 2
+            and in_degree >= 2
+            and out_degree >= 2
+            and outgoing_communities >= 2
+        ):
+            role = "coordinator"
+            confidence = (
+                0.55
+                + 0.15 * _scale(collecting_branches, 3)
+                + 0.15 * _scale(seed_source_count, 3)
+                + 0.15 * _scale(outgoing_communities, 3)
+            )
+            evidence = (
+                f"Связка {collecting_branches} ветвей сбора: пути от {seed_source_count} seed, "
+                f"выход в {outgoing_communities} кластера. Гипотеза координации."
+            )
         elif in_degree > 0 and out_degree == 0 and not boundary and not is_seed:
             role = "terminal"
             confidence = 0.55 + 0.25 * _scale(in_degree, 5) + 0.2 * _scale(in_kzt, 1_000_000)
@@ -308,35 +359,45 @@ def _node_records(
             "out_concentration": _round(out_concentration),
             "boundary": boundary,
             "component_id": component_of[gid],
+            "seed_source_count": seed_source_count,
+            "seed_paths": observed_paths[:3],
+            "collecting_branches": collecting_branches,
+            "outgoing_communities": outgoing_communities,
         }
         records.append(rec)
     return records
 
 
 def _prioritize(records: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Assign percentile-based review priority and assemble the top list."""
-    # Percentile ranks preserve a useful spread without fitting a black-box model.
-    table = pd.DataFrame(records)
-    volume = (table.in_kzt + table.out_kzt).rank(pct=True)
-    connections = (table.in_degree + table.out_degree).rank(pct=True)
-    centrality = table.pagerank.rank(pct=True)
-    role_weight = table.role.map(
-        {
-            "coordinator": 1,
-            "consolidator": 0.85,
-            "distributor": 0.8,
-            "transit": 0.65,
-            "terminal": 0.35,
-            "peripheral": 0.15,
-        }
-    )
-    table["priority_score"] = (
-        0.35 * volume + 0.25 * connections + 0.25 * centrality + 0.15 * role_weight
-    ).round(6)
-    records = table.to_dict("records")
+    """Rank observable convergence beyond known seeds, without a role bonus."""
     for record in records:
-        if pd.isna(record["pass_through"]):
-            record["pass_through"] = None
+        seeds, degree = record["seed_source_count"], record["in_degree"]
+        volume, concentration = record["in_kzt"], record["out_concentration"]
+        forwarding = concentration * (1 - 1 / degree) if degree >= 2 and record["out_degree"] else 0
+        record["priority_breakdown"] = [
+            {"label": label, "value": value, "normalized": normalized, "weight": weight}
+            for label, value, normalized, weight in (
+                ("Пути от разных исходных клиентов", seeds, seeds / (seeds + 1), 0.35),
+                ("Непосредственные плательщики", degree, degree / (degree + 3), 0.30),
+                ("Входящий оборот, ₸", volume, volume / (volume + 500_000), 0.20),
+                ("Концентрация пересылки (HHI)", concentration, forwarding, 0.15),
+            )
+        ]
+        if record["is_seed"]:
+            factor, reason = 0.5, "Уже известный исходный клиент: коэффициент 0,5; входы неполны."
+        elif record["boundary"]:
+            factor, reason = (
+                0.85,
+                "Граница обхода: коэффициент 0,85; дальнейшие переводы неизвестны.",
+            )
+        else:
+            factor, reason = 1.0, "Не исходный клиент и не граница обхода: коэффициент 1."
+        record["priority_factor"] = factor
+        record["priority_reason"] = reason
+        record["priority_score"] = _round(
+            factor
+            * sum(item["normalized"] * item["weight"] for item in record["priority_breakdown"])
+        )
     records.sort(key=lambda n: (-n["priority_score"], int(n["gid"])))
     top = [
         {
@@ -345,9 +406,11 @@ def _prioritize(records: list[dict]) -> tuple[list[dict], list[dict]]:
             "role": n["role"],
             "priority_score": n["priority_score"],
             "why": (
-                f"{n['evidence']} Оборот {n['in_kzt'] + n['out_kzt']:,.0f} KZT; "
-                f"связей {n['in_degree'] + n['out_degree']}; PageRank {n['pagerank']:.6f}. "
-                "Вес приоритета: оборот 35%, связи 25%, PageRank 25%, роль 15%."
+                f"{n['evidence']} Пути от {n['seed_source_count']} разных seed; "
+                f"плательщиков {n['in_degree']}; вход {n['in_kzt']:,.0f} KZT; "
+                f"HHI выхода {n['out_concentration']:.3f}. "
+                "Веса: достижимость seed 35%, плательщики 30%, вход 20%, пересылка 15%. "
+                f"{n['priority_reason']} Пути не доказывают происхождение конкретных денег."
             ),
         }
         for i, n in enumerate(records[:100], 1)

@@ -1,7 +1,6 @@
 import {
   type LinkData,
   type NodeDetail,
-  type Role,
   formatCount,
   formatMoney,
   formatMoneyCompact,
@@ -11,19 +10,9 @@ import {
 } from './api'
 import RoleTag from './RoleTag'
 
-const preciseMoney = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
-const pagerankNumber = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 6, maximumFractionDigits: 6 })
-const roleWeightNumber = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+const signalNumber = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6 })
+const factorNumber = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 })
 const passThroughNumber = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
-
-const priorityRoleWeight: Record<Role, number> = {
-  coordinator: 1,
-  consolidator: 0.85,
-  distributor: 0.8,
-  transit: 0.65,
-  terminal: 0.35,
-  peripheral: 0.15,
-}
 
 interface Props {
   detail: NodeDetail
@@ -55,17 +44,15 @@ export default function NodeCard({ detail, onSelect }: Props) {
     <details className="priority-method detail-section">
       <summary>Как рассчитан приоритет</summary>
       <div className="priority-method-body">
-        <p>Сервер ранжирует узлы для проверки по всей выборке. Оборот, число связей и PageRank переводятся в процентильные ранги.</p>
+        <p>Приоритет основан на наблюдаемых признаках. Значения и веса расчёта:</p>
         <dl>
-          <div><dt>Оборот · вес 35%</dt><dd>{preciseMoney.format(node.in_kzt + node.out_kzt)} ₸</dd></div>
-          <div>
-            <dt>Связи · вес 25%</dt>
-            <dd>{formatCount(node.in_degree + node.out_degree)} <small>({formatCount(node.in_degree)} вход. + {formatCount(node.out_degree)} исх.)</small></dd>
-          </div>
-          <div><dt>PageRank · вес 25%</dt><dd>{pagerankNumber.format(node.pagerank)}</dd></div>
-          <div><dt>Роль · вес 15%</dt><dd>{roleLabel[node.role]} · {roleWeightNumber.format(priorityRoleWeight[node.role])}</dd></div>
+          {node.priority_breakdown.map((signal, index) => <div key={`${signal.label}-${index}`}>
+            <dt>{signal.label}<small>Вес {formatPercent(signal.weight)}</small></dt>
+            <dd>{signalNumber.format(signal.value)}<small>Нормировано {signalNumber.format(signal.normalized)} · вклад {signalNumber.format(signal.normalized * signal.weight)}</small></dd>
+          </div>)}
         </dl>
-        <p className="priority-method-formula">Скор = 0,35 × процентиль оборота + 0,25 × процентиль связей + 0,25 × процентиль PageRank + 0,15 × вес роли.</p>
+        <p className="priority-method-formula">Сумма взвешенных признаков × коэффициент {factorNumber.format(node.priority_factor)}.</p>
+        <p>{node.priority_reason}</p>
         <p>Это порядок аналитической проверки, а не вероятность нарушения.</p>
       </div>
     </details>
@@ -74,6 +61,29 @@ export default function NodeCard({ detail, onSelect }: Props) {
       <h3>Основание роли</h3>
       <p className="evidence">{node.evidence}</p>
     </section>
+
+    <details className="detail-section seed-paths">
+      <summary>Пути от исходных клиентов · {formatCount(node.seed_source_count)}</summary>
+      <div className="seed-paths-body">
+        {node.is_seed && node.seed_source_count === 0
+          ? <p>Это исходный клиент; путь к самому себе не учитывается.</p>
+          : <p>До этого узла найдены пути от {formatCount(node.seed_source_count)} исходных клиентов.</p>}
+        {node.seed_paths.length === 0
+          ? !(node.is_seed && node.seed_source_count === 0) && <p>Наблюдаемых путей от исходных клиентов нет.</p>
+          : <ol>{node.seed_paths.map((path, pathIndex) => <li key={pathIndex}>
+            <div className="seed-path">
+              {path.map((gid, stepIndex) => <span className="seed-path-step" key={`${gid}-${stepIndex}`}>
+                <button type="button" onClick={() => onSelect(gid)} aria-label={`Открыть карточку клиента ${gid}`} translate="no">gid {gid}</button>
+                {stepIndex < path.length - 1 && <span aria-hidden="true">→</span>}
+              </span>)}
+            </div>
+          </li>)}</ol>}
+        <p>Это наблюдаемые пути по возрастающей глубине, а не доказательство перевода одних и тех же денег.</p>
+        {node.seed_source_count > node.seed_paths.length && node.seed_paths.length > 0 && <p>
+          Показано {formatCount(node.seed_paths.length)} из {formatCount(node.seed_source_count)} путей.
+        </p>}
+      </div>
+    </details>
 
     <section className="detail-section">
       <h3>Потоки в выборке</h3>

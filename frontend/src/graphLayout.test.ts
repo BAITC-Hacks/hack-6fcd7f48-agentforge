@@ -6,7 +6,9 @@ import { buildNeighborhood } from './graphLayout.ts'
 function node(gid: string): NodeData {
   return {
     gid, role: 'peripheral', role_score: 0.5, cluster_id: 1, priority_score: 0.25,
-    evidence: 'Тестовый узел', depth: 1, is_seed: false, in_degree: 0, out_degree: 0,
+    priority_breakdown: [], priority_factor: 1, priority_reason: 'Тестовый узел',
+    evidence: 'Тестовый узел', depth: 1, is_seed: false, seed_source_count: 0, seed_paths: [],
+    in_degree: 0, out_degree: 0,
     in_kzt: 0, out_kzt: 0, in_tx: 0, out_tx: 0, pagerank: 0.01,
     pass_through: null, in_concentration: 0, out_concentration: 0,
     boundary: false, component_id: 1,

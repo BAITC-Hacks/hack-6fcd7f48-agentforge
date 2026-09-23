@@ -148,11 +148,13 @@ a { color: #245d72; }
 .priority-method-body { padding: 0 0 16px; }
 .priority-method .priority-method-body p { margin: 0; color: #556f79; font-size: 12px; line-height: 1.55; }
 .priority-method-body dl { margin: 12px 0; border-top: 1px solid #e3ebee; }
-.priority-method-body dl > div { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid #e3ebee; font-size: 12px; line-height: 1.4; }
-.priority-method-body dt { flex: 0 0 auto; color: #607984; }
-.priority-method-body dd { margin: 0; min-width: 0; color: #244753; font-weight: 650; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.priority-method-body dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; padding: 7px 0; border-bottom: 1px solid #e3ebee; font-size: 12px; line-height: 1.4; }
+.priority-method-body dt { flex: 1 1 105px; min-width: 0; color: #607984; overflow-wrap: anywhere; }
+.priority-method-body dt small { display: block; color: #526a74; font-size: 12px; }
+.priority-method-body dd { flex: 1 1 120px; margin: 0; min-width: 0; color: #244753; font-weight: 650; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .priority-method-body dd small { display: block; color: #526a74; font-size: 12px; font-weight: 400; }
 .priority-method .priority-method-body .priority-method-formula { margin-bottom: 8px; color: #314e5a; }
+.priority-method .priority-method-body p:last-child { margin-top: 8px; }
 .detail-section { padding: 17px 0; border-top: 1px solid #e0e9ec; }
 .detail-section h3 { display: flex; justify-content: space-between; margin: 0 0 10px; color: #2d4c58; font-size: 13px; font-weight: 700; }
 .detail-section h3 span { color: #526a74; font-size: 12px; font-weight: 500; }
@@ -181,12 +183,21 @@ a { color: #245d72; }
 .connections button small { color: #526a74; font-size: 12px; }
 .detail-section .muted { color: #526a74; font-size: 12px; }
 .next-steps { padding-bottom: 0; }
-.data-caveat summary, .connections summary, .next-steps summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; font-size: 12px; font-weight: 600; cursor: pointer; list-style: none; }
-.data-caveat summary::-webkit-details-marker, .connections summary::-webkit-details-marker, .next-steps summary::-webkit-details-marker { display: none; }
-.data-caveat summary::after, .connections summary::after, .next-steps summary::after { content: "⌄"; font-size: 18px; }
-.data-caveat[open] > summary::after, .connections details[open] > summary::after, .next-steps[open] > summary::after { transform: rotate(180deg); }
-.connections summary, .next-steps summary { color: #245d72; }
+.data-caveat summary, .connections summary, .next-steps summary, .seed-paths summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; font-size: 12px; font-weight: 600; cursor: pointer; list-style: none; }
+.data-caveat summary::-webkit-details-marker, .connections summary::-webkit-details-marker, .next-steps summary::-webkit-details-marker, .seed-paths summary::-webkit-details-marker { display: none; }
+.data-caveat summary::after, .connections summary::after, .next-steps summary::after, .seed-paths summary::after { content: "⌄"; font-size: 18px; }
+.data-caveat[open] > summary::after, .connections details[open] > summary::after, .next-steps[open] > summary::after, .seed-paths[open] > summary::after { transform: rotate(180deg); }
+.connections summary, .next-steps summary, .seed-paths summary { color: #245d72; }
 .next-steps ul { padding-bottom: 12px; }
+.seed-paths-body { padding-bottom: 12px; }
+.seed-paths-body p + p { margin-top: 8px; }
+.seed-paths ol { margin: 10px 0; padding-left: 20px; }
+.seed-paths li + li { margin-top: 8px; }
+.seed-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.seed-path-step { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.seed-path-step button { min-height: 36px; padding: 4px 7px; border: 1px solid #c8d8df; border-radius: 4px; background: #fff; color: #245d72; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.seed-path-step button:hover { background: #eef6f8; }
+.seed-path-step > span { color: #526a74; }
 .status-message { padding: 24px 16px; color: #526a74; font-size: 12px; line-height: 1.6; }
 .status-message p { margin: 0; }
 .text-action { margin-top: 8px; padding: 0; border: 0; background: transparent; color: #23637a; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
@@ -235,7 +246,7 @@ a { color: #245d72; }
   .center-panel { order: 1; min-height: 0; }
   .right-panel { order: 2; max-height: none; border-left: 0; border-top: 1px solid #dbe5e9; }
   .search-form input, .filter-row select, .graph-access-fields select { min-height: 44px; font-size: 16px; }
-  .search-form button, .filter-context button, .view-tabs button, .graph-toolbar button, .graph-controls button, .graph-inspector-close, .priority-method summary, .connections button, .text-action { min-height: 44px; }
+  .search-form button, .filter-context button, .view-tabs button, .graph-toolbar button, .graph-controls button, .graph-inspector-close, .priority-method summary, .connections button, .seed-path-step button, .text-action { min-height: 44px; }
   .filter-row select { height: 44px; }
   .graph-controls { flex-direction: row; }
   .graph-controls button { width: 44px; height: 44px; }

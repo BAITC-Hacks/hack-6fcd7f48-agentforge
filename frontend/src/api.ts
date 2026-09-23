@@ -6,9 +6,14 @@ export interface NodeData {
   role_score: number
   cluster_id: number
   priority_score: number
+  priority_breakdown: Array<{ label: string; value: number; normalized: number; weight: number }>
+  priority_factor: number
+  priority_reason: string
   evidence: string
   depth: number
   is_seed: boolean
+  seed_source_count: number
+  seed_paths: string[][]
   in_degree: number
   out_degree: number
   in_kzt: number
