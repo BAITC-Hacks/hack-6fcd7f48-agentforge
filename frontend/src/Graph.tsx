@@ -30,13 +30,13 @@ const graphStyle: StylesheetStyle[] = [
   { selector: 'node[?focusEndpoint]', style: { 'border-width': 4, 'border-color': '#285d73', 'z-index': 998 } },
   { selector: 'node[?dimmed]', style: { 'opacity': 0.18 } },
   { selector: 'edge', style: {
-    'width': 1.35, 'line-color': '#819aa5', 'target-arrow-color': '#527784',
+    'width': 'data(lineWidth)', 'line-color': '#819aa5', 'target-arrow-color': '#527784',
     'target-arrow-shape': 'triangle', 'arrow-scale': 0.8, 'curve-style': 'bezier',
     'control-point-step-size': 24, 'opacity': 0.78,
   } },
   { selector: 'edge[?dimmed]', style: { 'opacity': 0.08 } },
   { selector: 'edge[?focused]', style: {
-    'width': 3, 'line-color': '#285d73', 'target-arrow-color': '#285d73',
+    'width': 6, 'line-color': '#285d73', 'target-arrow-color': '#285d73',
     'opacity': 1, 'z-index': 999,
   } },
 ]
@@ -90,6 +90,9 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
 
   useEffect(() => {
     if (waitingForNode || !container.current) return
+    const edgeLogs = visibleEdges.map((edge) => Math.log1p(Math.max(0, edge.sum_kzt)))
+    const minEdgeLog = Math.min(...edgeLogs)
+    const maxEdgeLog = Math.max(...edgeLogs)
     const elements: ElementDefinition[] = [
       ...visibleNodes.map((node) => ({
         data: {
@@ -100,10 +103,13 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
         },
         ...(neighborhood ? { position: neighborhood.positions[node.gid] } : {}),
       })),
-      ...visibleEdges.map((edge) => ({
+      ...visibleEdges.map((edge, index) => ({
         data: {
           id: edgeId(edge), source: edge.src, target: edge.dst,
           src: edge.src, dst: edge.dst, sum_kzt: edge.sum_kzt, n_tx: edge.n_tx,
+          lineWidth: maxEdgeLog > minEdgeLog
+            ? 1 + 4 * (edgeLogs[index]! - minEdgeLog) / (maxEdgeLog - minEdgeLog)
+            : 1.35,
           focused: false, dimmed: false,
         },
       })),
@@ -241,6 +247,7 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
         <div className="graph-legend" aria-label="Цвета ролей">
           {roles.map((role) => <span key={role}><i style={{ backgroundColor: roleColor[role] }} />{roleLabel[role]}</span>)}
           <span><i className="seed-mark" />Исходный клиент</span>
+          <span className="legend-note">Толщина — сумма переводов</span>
         </div>
       </>}
     </div>

@@ -292,6 +292,7 @@ export default function App() {
                       <span className="priority-main">
                         <strong title={node.gid}>{node.gid}</strong>
                         <RoleTag role={node.role} />
+                        <span className="priority-evidence" title={node.evidence}>{node.evidence}</span>
                       </span>
                       <Score value={node.priority_score} />
                     </button>

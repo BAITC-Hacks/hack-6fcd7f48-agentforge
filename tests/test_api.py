@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import io
 import json
 from pathlib import Path
 
@@ -22,6 +23,7 @@ def test_graph_selection_and_export_allowlist(sample_data: Path, tmp_path: Path,
             ) as client,
         ):
             assert (await client.get("/api/health")).json()["ready"] is True
+            assert not (tmp_path / "out").exists()
             graph = (await client.get("/api/graph", params={"gid": "2", "limit": 2})).json()
             assert graph["truncated"] is True
             assert graph["total_nodes"] == 4
@@ -35,7 +37,10 @@ def test_graph_selection_and_export_allowlist(sample_data: Path, tmp_path: Path,
             assert page["total"] == 6 and len(page["items"]) == 2
             assert page["items"] == api.app.state.snapshot.nodes[1:3]
             assert (await client.get("/api/nodes", params={"limit": 501})).status_code == 422
-            assert (await client.get("/api/exports/nodes_roles.csv")).status_code == 200
+            for filename, payload in api.app.state.snapshot.exports.items():
+                response = await client.get(f"/api/exports/{filename}")
+                assert response.status_code == 200
+                assert response.content == payload
             assert (await client.get("/api/exports/other.csv")).status_code == 404
             assert (await client.get("/api/exports/..%2Fnodes.parquet")).status_code != 200
             detail = (await client.get("/api/nodes/4")).json()
@@ -64,6 +69,37 @@ def test_missing_data_keeps_health_available(tmp_path: Path, monkeypatch):
             assert health.json()["ready"] is False
             assert "parquet" in health.json()["detail"]
             assert (await client.get("/api/summary")).status_code == 503
+
+    asyncio.run(check())
+
+
+def test_nonseed_outgoing_exceeds_observed_incoming_is_flagged(
+    sample_data: Path, tmp_path: Path, monkeypatch
+):
+    edges_path = sample_data / "edges.parquet"
+    tx_path = sample_data / "transactions.parquet"
+    edges = pd.read_parquet(edges_path)
+    tx = pd.read_parquet(tx_path)
+    edges.loc[edges["dst"] == 6, "sum_kzt"] = 5000
+    tx.loc[tx["dst"] == 6, "sum_kzt"] = 5000
+    edges.to_parquet(edges_path, index=False)
+    tx.to_parquet(tx_path, index=False)
+    monkeypatch.setattr(api, "DATA_DIR", sample_data)
+    monkeypatch.setattr(api, "OUT_DIR", tmp_path / "out")
+
+    async def check():
+        async with (
+            api.app.router.lifespan_context(api.app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=api.app), base_url="http://test"
+            ) as client,
+        ):
+            detail = (await client.get("/api/nodes/2")).json()
+            assert detail["node"]["pass_through"] == 1.4
+            assert detail["node"]["role"] != "consolidator"
+            assert detail["warnings"]
+            assert any("отправлено больше" in warning.lower() for warning in detail["warnings"])
+            assert "вход" in detail["node"]["evidence"].lower()
 
     asyncio.run(check())
 
@@ -101,10 +137,9 @@ def test_signed_int64_ids_survive_csv_and_json(sample_data: Path, tmp_path: Path
                 graph = (await client.get("/api/graph", params={"gid": gid})).json()
                 assert gid in {node["gid"] for node in graph["nodes"]}
                 json.dumps(graph, allow_nan=False)
-            with (api.app.state.snapshot.output_dir / "nodes_roles.csv").open(
-                newline="", encoding="utf-8"
-            ) as handle:
-                csv_ids = {row["gid"] for row in csv.DictReader(handle)}
+            response = await client.get("/api/exports/nodes_roles.csv")
+            assert response.status_code == 200
+            csv_ids = {row["gid"] for row in csv.DictReader(io.StringIO(response.text))}
             assert expected <= csv_ids
 
     asyncio.run(check())
@@ -124,6 +159,7 @@ def test_api_export_remains_on_its_snapshot_during_external_recalculation(
                 transport=httpx.ASGITransport(app=api.app), base_url="http://test"
             ) as client,
         ):
+            assert not out.exists()
             before = (await client.get("/api/exports/nodes_roles.csv")).content
             original_sum = (await client.get("/api/summary")).json()["sum_kzt"]
             edges_path = sample_data / "edges.parquet"

@@ -6,10 +6,10 @@ import argparse
 import math
 import os
 import time
-import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import networkx as nx
 import pandas as pd
@@ -27,6 +27,7 @@ class Snapshot:
     top: list[dict]
     summary: dict
     output_dir: Path
+    exports: dict[str, bytes]
 
 
 def _read(data_dir: Path, filename: str, required: set[str]) -> pd.DataFrame:
@@ -227,8 +228,14 @@ def _seed_paths(graph: nx.DiGraph, nodes_df: pd.DataFrame) -> dict[int, dict[int
     return paths
 
 
-def _collects(in_degree: int, out_degree: int) -> bool:
-    return in_degree >= 3 and (out_degree <= 2 or in_degree >= 2 * out_degree)
+def _number(value: float, places: int = 0) -> str:
+    """Readable Russian numbers, without locale-dependent process settings."""
+    result = f"{value:,.{places}f}".replace(",", " ").replace(".", ",")
+    return result.rstrip("0").rstrip(",") if places else result
+
+
+def _money_text(value: float) -> str:
+    return f"{_number(value, 2)} ₸"
 
 
 def _node_records(
@@ -243,6 +250,19 @@ def _node_records(
     pagerank = _pagerank(graph)
     node_info = nodes_df.set_index("gid")
     seed_paths = _seed_paths(graph, nodes_df)
+    in_weights = dict(graph.in_degree(weight="weight"))
+    out_weights = dict(graph.out_degree(weight="weight"))
+    # Collector shape is independent of the final primary role, so loops do not
+    # make role assignment recursive. Depth is a shortest hop, not a time order.
+    collectors = {
+        gid
+        for gid in graph
+        if not bool(node_info.at[gid, "is_seed"])
+        and int(node_info.at[gid, "depth"]) < 4
+        and graph.in_degree(gid) >= 2
+        and in_weights[gid] > 0
+        and out_weights[gid] / in_weights[gid] <= 0.8
+    }
     records: list[dict] = []
     for gid in sorted(graph):
         pred = graph.pred[gid]
@@ -267,23 +287,32 @@ def _node_records(
         observed_paths = [path for seed, path in seed_paths[gid].items() if seed != gid]
         observed_paths.sort(key=lambda path: (len(path), tuple(map(int, path))))
         seed_source_count = len(observed_paths)
-        collecting_branches = sum(
-            not bool(node_info.at[parent, "is_seed"])
-            and int(node_info.at[parent, "depth"]) < depth
-            and _collects(graph.in_degree(parent), graph.out_degree(parent))
-            for parent in pred
-        )
+        collecting_branches = sum(parent in collectors for parent in pred)
         outgoing_communities = len({cluster_of[recipient] for recipient in succ})
         # Ordered rules: the first matching structural hypothesis is the primary role.
-        if _collects(in_degree, out_degree):
+        if not is_seed and not boundary and collecting_branches >= 2 and out_degree >= 2:
+            role = "coordinator"
+            confidence = (
+                0.55
+                + 0.25 * _scale(collecting_branches, 5)
+                + 0.20 * _scale(in_degree + out_degree, 20)
+            )
+            evidence = (
+                f"Гипотеза координации: узлов сбора на входе — {collecting_branches}; "
+                f"получателей — {out_degree}."
+            )
+        elif gid in collectors:
             role = "consolidator"
-            confidence = 0.55 + 0.3 * _scale(in_degree, 20) + 0.15 * (1 - in_concentration)
-            evidence = f"Признаки сбора: {in_degree} плательщиков, вход {in_kzt:,.0f} KZT, выход {out_kzt:,.0f} KZT."
+            confidence = 0.50 + 0.30 * _scale(in_degree, 10) + 0.20 * (1 - pass_through)
+            evidence = (
+                f"Плательщиков — {in_degree}; дальше отправлено {_number(pass_through * 100, 1)}% входа. "
+                f"В выборке получено {_money_text(in_kzt)}."
+            )
         elif out_degree >= 5 and out_degree >= 2 * max(in_degree, 1):
             role = "distributor"
             confidence = 0.55 + 0.3 * _scale(out_degree, 40) + 0.15 * (1 - out_concentration)
             evidence = (
-                f"Признаки распределения: {out_degree} получателей, выход {out_kzt:,.0f} KZT."
+                f"Признаки распределения: получателей — {out_degree}; выход {_money_text(out_kzt)}."
             )
         elif (
             pass_through is not None
@@ -297,39 +326,33 @@ def _node_records(
                 + 0.3 * (1 - abs(pass_through - 1) / 0.2)
                 + 0.15 * _scale(in_degree + out_degree, 10)
             )
-            evidence = f"Признаки транзита: вход {in_kzt:,.0f}, выход {out_kzt:,.0f} KZT; доля выхода {pass_through:.2f}."
-        elif (
-            not is_seed
-            and seed_source_count >= 2
-            and collecting_branches >= 2
-            and in_degree >= 2
-            and out_degree >= 2
-            and outgoing_communities >= 2
-        ):
-            role = "coordinator"
-            confidence = (
-                0.55
-                + 0.15 * _scale(collecting_branches, 3)
-                + 0.15 * _scale(seed_source_count, 3)
-                + 0.15 * _scale(outgoing_communities, 3)
-            )
             evidence = (
-                f"Связка {collecting_branches} ветвей сбора: пути от {seed_source_count} seed, "
-                f"выход в {outgoing_communities} кластера. Гипотеза координации."
+                f"Признаки транзита: вход {_money_text(in_kzt)}; дальше отправлено "
+                f"{_number(pass_through * 100, 1)}% наблюдаемого входа."
             )
         elif in_degree > 0 and out_degree == 0 and not boundary and not is_seed:
             role = "terminal"
             confidence = 0.55 + 0.25 * _scale(in_degree, 5) + 0.2 * _scale(in_kzt, 1_000_000)
-            evidence = f"В пределах обзора получено {in_kzt:,.0f} KZT от {in_degree} плательщиков; исходящих нет."
+            evidence = (
+                f"Получено {_money_text(in_kzt)}; плательщиков — {in_degree}; "
+                "в выборке исходящих нет."
+            )
         else:
             role = "peripheral"
             confidence = 0.5 + 0.2 * _scale(in_degree + out_degree, 4)
             if boundary and out_degree == 0:
-                evidence = f"Граница обхода, depth=4: вход {in_kzt:,.0f} KZT от {in_degree}; дальнейшие переводы неизвестны."
+                evidence = f"Граница 4-го колена: вход {_money_text(in_kzt)}; дальнейшие переводы неизвестны."
             elif is_seed:
                 evidence = f"Исходный клиент: {in_degree} входящих, {out_degree} исходящих связей; входящая выборка неполна."
             else:
-                evidence = f"Нет пороговых признаков роли: {in_degree} плательщиков, {out_degree} получателей."
+                evidence = (
+                    f"Роль не определена: плательщиков — {in_degree}, получателей — {out_degree}."
+                )
+        if pass_through is not None and pass_through > 1:
+            if _number(pass_through, 2) == "1":
+                evidence += " Выход немного выше входа; баланс неполон."
+            else:
+                evidence += f" Выход выше входа; отношение {_number(pass_through, 2)}. Баланс неполон."
         if boundary:
             confidence = min(confidence, 0.75)
             if "Граница" not in evidence:
@@ -357,6 +380,7 @@ def _node_records(
             "pass_through": _round(pass_through) if pass_through is not None else None,
             "in_concentration": _round(in_concentration),
             "out_concentration": _round(out_concentration),
+            "largest_out_share": _round(max((v["weight"] / out_kzt for v in outgoing), default=0)),
             "boundary": boundary,
             "component_id": component_of[gid],
             "seed_source_count": seed_source_count,
@@ -380,7 +404,7 @@ def _prioritize(records: list[dict]) -> tuple[list[dict], list[dict]]:
                 ("Пути от разных исходных клиентов", seeds, seeds / (seeds + 1), 0.35),
                 ("Непосредственные плательщики", degree, degree / (degree + 3), 0.30),
                 ("Входящий оборот, ₸", volume, volume / (volume + 500_000), 0.20),
-                ("Концентрация пересылки (HHI)", concentration, forwarding, 0.15),
+                ("Концентрация пересылки", concentration, forwarding, 0.15),
             )
         ]
         if record["is_seed"]:
@@ -406,10 +430,10 @@ def _prioritize(records: list[dict]) -> tuple[list[dict], list[dict]]:
             "role": n["role"],
             "priority_score": n["priority_score"],
             "why": (
-                f"{n['evidence']} Пути от {n['seed_source_count']} разных seed; "
-                f"плательщиков {n['in_degree']}; вход {n['in_kzt']:,.0f} KZT; "
-                f"HHI выхода {n['out_concentration']:.3f}. "
-                "Веса: достижимость seed 35%, плательщики 30%, вход 20%, пересылка 15%. "
+                f"{n['evidence']} Исходных клиентов с путями до узла — {n['seed_source_count']}; "
+                f"плательщиков — {n['in_degree']}; вход {_money_text(n['in_kzt'])}. "
+                f"Крупнейшему получателю отправлено {_number(n['largest_out_share'] * 100, 1)}% исходящей суммы. "
+                "Веса приоритета: пути 35%, плательщики 30%, вход 20%, концентрация пересылки 15%. "
                 f"{n['priority_reason']} Пути не доказывают происхождение конкретных денег."
             ),
         }
@@ -458,7 +482,7 @@ def _cluster_records(
                 purpose = "назначение по структуре не определяется"
             hypothesis = (
                 f"Гипотеза: {purpose}. Исходных узлов: {n_seed}; внутренний оборот "
-                f"{internal:,.0f} KZT. Кандидаты: сбор {n_collect}, распределение "
+                f"{_money_text(internal)}. Кандидаты: сбор {n_collect}, распределение "
                 f"{n_distribute}, транзит {n_transit}. Чаще всего: {role_label[primary]} "
                 f"({int(counts.iloc[0])} узлов)."
             )
@@ -475,32 +499,33 @@ def _cluster_records(
     return clusters
 
 
-def _publish_csv(
-    out_dir: Path, records: list[dict], clusters: list[dict], top: list[dict], write: bool
-) -> Path:
-    """Write a complete snapshot before switching stable CSV paths."""
-    output_dir = out_dir
-    if write:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_id = uuid.uuid4().hex
-        output_dir = out_dir / ".snapshots" / snapshot_id
-        output_dir.mkdir(parents=True)
-        pd.DataFrame(records)[ROLE_COLUMNS].to_csv(output_dir / "nodes_roles.csv", index=False)
-        pd.DataFrame(clusters).assign(top_gids=lambda df: df.top_gids.map(lambda x: ",".join(x)))[
-            CLUSTER_COLUMNS
-        ].to_csv(output_dir / "clusters.csv", index=False)
-        pd.DataFrame(top)[TOP_COLUMNS].to_csv(output_dir / "top_nodes.csv", index=False)
-        # Stable public paths all follow one atomic pointer to a complete snapshot.
-        for filename in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv"):
-            public = out_dir / filename
-            if not public.is_symlink() or os.readlink(public) != f"current/{filename}":
-                staged_link = out_dir / f".{filename}.{snapshot_id}"
-                staged_link.symlink_to(f"current/{filename}")
-                os.replace(staged_link, public)
-        staged_current = out_dir / f".current.{snapshot_id}"
-        staged_current.symlink_to(Path(".snapshots") / snapshot_id)
-        os.replace(staged_current, out_dir / "current")
-    return output_dir
+def _csv_exports(records: list[dict], clusters: list[dict], top: list[dict]) -> dict[str, bytes]:
+    tables = {
+        "nodes_roles.csv": pd.DataFrame(records)[ROLE_COLUMNS],
+        "clusters.csv": pd.DataFrame(clusters).assign(
+            top_gids=lambda df: df.top_gids.map(lambda gids: ",".join(gids))
+        )[CLUSTER_COLUMNS],
+        "top_nodes.csv": pd.DataFrame(top)[TOP_COLUMNS],
+    }
+    return {
+        name: table.to_csv(index=False, lineterminator="\n").encode("utf-8")
+        for name, table in tables.items()
+    }
+
+
+def _publish_csv(out_dir: Path, exports: dict[str, bytes]) -> None:
+    """Publish ordinary CSV files; a failed write cannot truncate an existing file."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, content in exports.items():
+        staged = None
+        try:
+            with NamedTemporaryFile(dir=out_dir, prefix=f".{name}.", delete=False) as handle:
+                staged = Path(handle.name)
+                handle.write(content)
+            os.replace(staged, out_dir / name)
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
 
 
 def analyze(data_dir: Path, out_dir: Path, *, write: bool = True) -> Snapshot:
@@ -555,9 +580,11 @@ def analyze(data_dir: Path, out_dir: Path, *, write: bool = True) -> Snapshot:
         "role_counts": role_counts,
         "warnings": warnings,
     }
-    output_dir = _publish_csv(out_dir, records, clusters, top, write)
+    exports = _csv_exports(records, clusters, top)
+    if write:
+        _publish_csv(out_dir, exports)
     summary["elapsed_seconds"] = _round(time.perf_counter() - start)
-    return Snapshot(records, edge_records, clusters, top, summary, output_dir)
+    return Snapshot(records, edge_records, clusters, top, summary, out_dir, exports)
 
 
 def main() -> None:

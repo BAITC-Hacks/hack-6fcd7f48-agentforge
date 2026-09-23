@@ -22,7 +22,7 @@ EXPORTS = {"nodes_roles.csv", "clusters.csv", "top_nodes.csv"}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        app.state.snapshot = analyze(DATA_DIR, OUT_DIR)
+        app.state.snapshot = analyze(DATA_DIR, OUT_DIR, write=False)
         app.state.error = None
     except Exception as exc:  # noqa: BLE001 - health remains available after any startup failure
         app.state.snapshot = None
@@ -120,7 +120,17 @@ async def node_detail(gid: str):
             "Входящие переводы seed вне исходящей выборки неизвестны; баланс и коэффициент пропуска не определяются."
         )
         next_steps.append("Запросить полную историю входящих переводов этого исходного клиента.")
-    if node["role"] == "consolidator":
+    elif node["out_kzt"] > node["in_kzt"]:
+        warnings.append(
+            "В выборке отправлено больше, чем получено. Возможны ненаблюдаемые поступления "
+            "или остаток до начала периода; полный баланс неизвестен."
+        )
+    if node["role"] == "coordinator":
+        next_steps.append(
+            "Проверить связи со сборщиками, даты переводов и полную историю поступлений; "
+            "структура графа сама по себе не подтверждает управление участниками."
+        )
+    elif node["role"] == "consolidator":
         next_steps.append(
             "Проверить источники поступлений от разных плательщиков и следующие переводы."
         )
@@ -186,11 +196,8 @@ async def graph(
 async def export(filename: str):
     if filename not in EXPORTS:
         raise HTTPException(status_code=404, detail="Файл выгрузки не найден")
-    target = snapshot().output_dir / filename
-    if not target.is_file():
-        raise HTTPException(status_code=503, detail="Выгрузка ещё не создана")
     return Response(
-        target.read_bytes(),
+        snapshot().exports[filename],
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

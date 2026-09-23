@@ -91,12 +91,12 @@ export default function NodeCard({ detail, onSelect }: Props) {
         <div>
           <span>Получено</span>
           <strong>{formatMoney(node.in_kzt)}</strong>
-          <small>{formatCount(node.in_degree)} отправителей · {formatCount(node.in_tx)} операций</small>
+          <small>Отправителей: {formatCount(node.in_degree)} · Операций: {formatCount(node.in_tx)}</small>
         </div>
         <div>
           <span>Отправлено</span>
           <strong>{formatMoney(node.out_kzt)}</strong>
-          <small>{formatCount(node.out_degree)} получателей · {formatCount(node.out_tx)} операций</small>
+          <small>Получателей: {formatCount(node.out_degree)} · Операций: {formatCount(node.out_tx)}</small>
         </div>
       </div>
       {node.pass_through !== null && <p className="metric-note">
@@ -135,7 +135,7 @@ function ConnectionList({ title, links, onSelect }: { title: string; links: Link
       {links.length > 5 && <p className="connection-order">Сначала 5 крупнейших по сумме</p>}
       {renderLinks(sorted.slice(0, 5))}
       {links.length > 5 && <details>
-        <summary>Ещё {formatCount(links.length - 5)} связей</summary>
+        <summary>Остальные связи · {formatCount(links.length - 5)}</summary>
         {renderLinks(sorted.slice(5))}
       </details>}
     </>}

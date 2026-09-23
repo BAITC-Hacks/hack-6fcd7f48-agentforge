@@ -16,7 +16,10 @@ node_modules/
 frontend/dist/
 *.tsbuildinfo
 /data/
-/out/
+/out/*
+!/out/nodes_roles.csv
+!/out/clusters.csv
+!/out/top_nodes.csv
 *.log
 playwright-report/
 test-results/

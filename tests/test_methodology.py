@@ -164,3 +164,89 @@ def test_seed_and_boundary_never_become_false_terminal_or_coordinator():
         assert by_gid[gid]["role"] != "terminal"
         assert by_gid[gid]["priority_factor"] == 0.85
         assert "Граница" in by_gid[gid]["evidence"]
+
+
+def test_retention_rule_accepts_two_payers_without_fan_in_and_excludes_seed_boundary():
+    nodes = pd.DataFrame(
+        [
+            (1, 0, True),
+            (2, 0, True),
+            (3, 0, True),
+            (10, 1, False),
+            (11, 1, False),
+            (12, 4, False),
+            (20, 2, False),
+            (21, 2, False),
+            (22, 2, False),
+            (23, 2, False),
+            (24, 4, False),
+        ],
+        columns=["gid", "depth", "is_seed"],
+    )
+    graph = nx.DiGraph()
+    graph.add_nodes_from(nodes.gid)
+    for src, dst, amount in [
+        (2, 1, 100000),
+        (3, 1, 100000),
+        (1, 10, 50000),
+        (2, 10, 50000),
+        (2, 11, 10000),
+        (3, 11, 10000),
+        (1, 12, 50000),
+        (2, 12, 50000),
+        (10, 20, 5000),
+        (10, 21, 5000),
+        (10, 22, 5000),
+        (11, 23, 30000),
+        (12, 24, 5000),
+    ]:
+        graph.add_edge(src, dst, weight=amount, n_tx=1)
+    records = pipeline._node_records(graph, nodes, [set(graph)], [set(graph)])
+    by_gid = {int(record["gid"]): record for record in records}
+
+    assert (by_gid[10]["in_degree"], by_gid[10]["out_degree"]) == (2, 3)
+    assert by_gid[10]["pass_through"] == pytest.approx(0.15)
+    assert by_gid[10]["role"] == "consolidator"
+    assert by_gid[11]["pass_through"] == pytest.approx(1.5)
+    assert by_gid[11]["role"] != "consolidator"
+    assert by_gid[12]["pass_through"] == pytest.approx(0.05)
+    assert by_gid[12]["role"] != "consolidator"
+    assert by_gid[1]["in_degree"] == 2
+    assert by_gid[1]["pass_through"] is None
+    assert by_gid[1]["role"] != "consolidator"
+
+
+def test_coordinator_counts_retaining_predecessors_at_greater_depth():
+    nodes = pd.DataFrame(
+        [
+            (1, 0, True),
+            (2, 0, True),
+            (10, 3, False),
+            (11, 3, False),
+            (20, 2, False),
+            (30, 3, False),
+            (31, 3, False),
+        ],
+        columns=["gid", "depth", "is_seed"],
+    )
+    graph = nx.DiGraph()
+    graph.add_nodes_from(nodes.gid)
+    for src, dst, amount in [
+        (1, 10, 50000),
+        (2, 10, 50000),
+        (1, 11, 50000),
+        (2, 11, 50000),
+        (10, 20, 10000),
+        (11, 20, 10000),
+        (20, 30, 5000),
+        (20, 31, 5000),
+    ]:
+        graph.add_edge(src, dst, weight=amount, n_tx=1)
+    records = pipeline._node_records(graph, nodes, [set(graph)], [set(graph)])
+    by_gid = {int(record["gid"]): record for record in records}
+
+    assert by_gid[10]["role"] == by_gid[11]["role"] == "consolidator"
+    assert by_gid[20]["seed_source_count"] == 0
+    assert by_gid[20]["collecting_branches"] == 2
+    assert by_gid[20]["pass_through"] == pytest.approx(0.5)
+    assert by_gid[20]["role"] == "coordinator"

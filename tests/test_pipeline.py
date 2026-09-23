@@ -30,9 +30,12 @@ def test_complete_snapshot_including_boundary_and_isolate(sample_data: Path, tmp
     assert [n["priority_score"] for n in snapshot.top] == sorted(
         [n["priority_score"] for n in snapshot.top], reverse=True
     )
-    assert set(snapshot.output_dir.iterdir()) == {
-        snapshot.output_dir / name for name in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv")
-    }
+    filenames = {"nodes_roles.csv", "clusters.csv", "top_nodes.csv"}
+    assert set(snapshot.exports) == filenames
+    assert set((tmp_path / "out").iterdir()) == {tmp_path / "out" / name for name in filenames}
+    assert all(
+        (tmp_path / "out" / name).read_bytes() == snapshot.exports[name] for name in filenames
+    )
 
 
 def test_export_bytes_independent_of_input_order(sample_data: Path, tmp_path: Path):
@@ -46,25 +49,20 @@ def test_export_bytes_independent_of_input_order(sample_data: Path, tmp_path: Pa
         )
     second = analyze(shuffled_data, tmp_path / "second")
     for filename in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv"):
-        assert (first.output_dir / filename).read_bytes() == (
-            second.output_dir / filename
-        ).read_bytes()
+        assert first.exports[filename] == second.exports[filename]
     repeat = analyze(sample_data, tmp_path / "repeat")
     for filename in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv"):
-        assert (first.output_dir / filename).read_bytes() == (
-            repeat.output_dir / filename
-        ).read_bytes()
+        assert first.exports[filename] == repeat.exports[filename]
 
 
-def test_public_exports_switch_together_and_prior_snapshot_stays_readable(
+def test_public_exports_are_plain_files_and_prior_snapshot_bytes_stay_readable(
     sample_data: Path, tmp_path: Path
 ):
     out = tmp_path / "out"
     original = analyze(sample_data, out)
-    original_bytes = {
-        name: (original.output_dir / name).read_bytes()
-        for name in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv")
-    }
+    original_bytes = original.exports.copy()
+    assert not (out / "current").exists()
+    assert all((out / name).is_file() and not (out / name).is_symlink() for name in original_bytes)
     edges_path = sample_data / "edges.parquet"
     tx_path = sample_data / "transactions.parquet"
     edges = pd.read_parquet(edges_path)
@@ -74,11 +72,21 @@ def test_public_exports_switch_together_and_prior_snapshot_stays_readable(
     edges.to_parquet(edges_path, index=False)
     tx.to_parquet(tx_path, index=False)
     updated = analyze(sample_data, out)
-    assert original.output_dir != updated.output_dir
     for name, before in original_bytes.items():
-        assert (original.output_dir / name).read_bytes() == before
-        assert (out / name).read_bytes() == (updated.output_dir / name).read_bytes()
-    assert (out / "current").resolve() == updated.output_dir.resolve()
+        assert original.exports[name] == before
+        assert (out / name).read_bytes() == updated.exports[name]
+    assert original.exports["nodes_roles.csv"] != updated.exports["nodes_roles.csv"]
+    assert not (out / "current").exists()
+
+
+def test_analysis_without_write_returns_exports_without_creating_out(
+    sample_data: Path, tmp_path: Path
+):
+    out = tmp_path / "out"
+    snapshot = analyze(sample_data, out, write=False)
+    assert not out.exists()
+    assert set(snapshot.exports) == {"nodes_roles.csv", "clusters.csv", "top_nodes.csv"}
+    assert all(snapshot.exports.values())
 
 
 @pytest.mark.parametrize(
