@@ -1,0 +1,39 @@
+name: Verify Money Graph
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  product:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.16'
+          python-version: '3.14.3'
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+      - run: uv run ruff check backend tests scripts
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npm test && npm run lint && npm run typecheck && npm run build
+        working-directory: frontend
+      - name: Reject private local files in Git
+        run: |
+          python - <<'PY'
+          import pathlib, subprocess
+          names = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
+          bad = [p for p in names if
+                 (pathlib.PurePosixPath(p).name.startswith('.env') and pathlib.PurePosixPath(p).name != '.env.example')
+                 or any(part in {'.agents', '.codex', '.design-references', 'data', 'out'} for part in pathlib.PurePosixPath(p).parts)]
+          assert not bad, f'Local or private files tracked: {bad}'
+          assert '.env.example' in names
+          PY
