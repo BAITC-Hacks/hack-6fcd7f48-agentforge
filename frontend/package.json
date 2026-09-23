@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test src/selection.test.ts"
+    "test": "node --test src/*.test.ts"
   },
   "dependencies": {
     "cytoscape": "3.32.1",

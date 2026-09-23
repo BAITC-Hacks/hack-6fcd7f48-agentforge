@@ -157,7 +157,6 @@ export default function App() {
   const summaryData = summary.status === 'ready' ? summary.data : null
   const graphData = graph.status === 'ready' ? graph.data : null
   const detailData = detail?.status === 'ready' ? detail.data : null
-  const shownGraphCount = graphData ? graphData.nodes.length : 0
   const currentCluster = clusters.status === 'ready' ? clusters.data.find((item) => item.cluster_id === cluster) : undefined
 
   return <>
@@ -297,13 +296,7 @@ export default function App() {
           {graph.status === 'error' && <StatusMessage message={graph.message} retry={() => setRefresh((value) => value + 1)} />}
           {graphData && (graphData.nodes.length === 0
             ? <StatusMessage message="В этой области нет узлов. Вернитесь к обзору или выберите другой кластер." />
-            : <Graph data={graphData} selectedGid={selectedGid} onSelect={chooseNode} />)}
-          {graphData && <div className="graph-caption">
-            <span>
-              Показано {formatCount(shownGraphCount)} из {formatCount(graphData.total_nodes)} узлов · {formatCount(graphData.edges.length)} из {formatCount(graphData.total_edges)} связей
-            </span>
-            {graphData.truncated && <strong>Выборка ограничена 120 узлами; расчёты сделаны по всей сети.</strong>}
-          </div>}
+            : <Graph data={graphData} selectedGid={selectedGid} view={view} onSelect={chooseNode} />)}
           <div className="data-caveat">
             <strong>Границы данных</strong>
             <p>Обход включает только исходящие переводы до 4-го колена. У узлов на границе отсутствие исходящих не доказывает, что деньги остались у них. Входящие переводы исходных клиентов вне выборки не видны.</p>
