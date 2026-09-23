@@ -36,7 +36,7 @@ export default function NodeCard({ detail, onSelect }: Props) {
   return <div className="node-card">
     <div className="node-card-header">
       <p className="kicker">Карточка клиента</p>
-      <h2 title={node.gid}>gid {node.gid}</h2>
+      <h2 id="node-card-title" tabIndex={-1} title={node.gid} translate="no">gid {node.gid}</h2>
       <RoleTag role={node.role} />
     </div>
 

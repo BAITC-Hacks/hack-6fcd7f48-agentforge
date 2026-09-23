@@ -115,9 +115,13 @@ export default function App() {
     return () => controller.abort()
   }, [selectedGid, refresh])
 
-  function chooseNode(gid: string) {
+  function cancelPendingSearch() {
     searchSequence.current += 1
     setSearching(false)
+  }
+
+  function chooseNode(gid: string) {
+    cancelPendingSearch()
     setSelectedGid(gid)
     setView('node')
     setSearchError('')
@@ -149,15 +153,30 @@ export default function App() {
   }
 
   function selectCluster(value: string) {
+    cancelPendingSearch()
     const next = value === '' ? null : Number(value)
     setCluster(next)
     setView(next === null ? 'overview' : 'cluster')
   }
 
+  function selectView(next: View) {
+    cancelPendingSearch()
+    setView(next)
+  }
+
+  function resetFilters() {
+    cancelPendingSearch()
+    setRole('')
+    setCluster(null)
+    setView(selectedGid ? 'node' : 'overview')
+  }
+
   const summaryData = summary.status === 'ready' ? summary.data : null
   const graphData = graph.status === 'ready' ? graph.data : null
-  const detailData = detail?.status === 'ready' ? detail.data : null
+  const detailData = detail?.status === 'ready' && detail.data.node.gid === selectedGid ? detail.data : null
   const currentCluster = clusters.status === 'ready' ? clusters.data.find((item) => item.cluster_id === cluster) : undefined
+  const outsideFilters = detailData && ((role && detailData.node.role !== role)
+    || (cluster !== null && detailData.node.cluster_id !== cluster))
 
   return <>
     <a className="skip-link" href="#main">К рабочей области</a>
@@ -184,11 +203,20 @@ export default function App() {
         </nav>
       </header>
 
-      <main id="main" className="workspace">
+      <nav className="compact-nav" aria-label="Разделы рабочей области">
+        <a href="#search-title">Поиск</a>
+        <a href="#graph-title">Граф</a>
+        <a href="#client-card">Карточка</a>
+      </nav>
+      <p className="sr-only selection-status" role="status" aria-atomic="true">
+        {detailData ? `Карточка клиента ${detailData.node.gid} загружена. ${roleLabel[detailData.node.role]}.` : ''}
+      </p>
+
+      <main id="main" className="workspace" tabIndex={-1}>
         <aside className="left-panel" aria-label="Поиск и приоритеты">
           <section className="search-section" aria-labelledby="search-title">
             <div className="section-heading">
-              <h2 id="search-title">Найти клиента</h2>
+              <h2 id="search-title" tabIndex={-1}>Найти клиента</h2>
               <span>gid</span>
             </div>
             <form className="search-form" onSubmit={submitSearch}>
@@ -203,8 +231,7 @@ export default function App() {
                 placeholder="Введите gid…"
                 value={search}
                 onChange={(event) => {
-                  searchSequence.current += 1
-                  setSearching(false)
+                  cancelPendingSearch()
                   setSearch(event.target.value)
                   setSearchError('')
                 }}
@@ -214,6 +241,10 @@ export default function App() {
               <button type="submit" disabled={searching}>{searching ? 'Поиск…' : 'Найти'}</button>
             </form>
             {searchError && <p className="field-error" id={searchErrorId} role="alert">{searchError}</p>}
+            {detailData && <p className="search-result">
+              Выбран клиент <span translate="no">{detailData.node.gid}</span>.{' '}
+              <a href="#node-card-title">К карточке клиента</a>
+            </p>}
           </section>
 
           <section className="priority-section" aria-labelledby="priority-title">
@@ -224,7 +255,10 @@ export default function App() {
             <p className="section-note">Скор отражает структурные признаки, а не вероятность нарушения.</p>
             <div className="filter-row">
               <label htmlFor="role-filter">Роль</label>
-              <select id="role-filter" value={role} onChange={(event) => setRole(event.target.value as Role | '')}>
+              <select id="role-filter" value={role} onChange={(event) => {
+                cancelPendingSearch()
+                setRole(event.target.value as Role | '')
+              }}>
                 <option value="">Все роли</option>
                 {roles.map((item) => <option key={item} value={item}>{roleLabel[item]}</option>)}
               </select>
@@ -271,16 +305,16 @@ export default function App() {
           <div className="graph-heading">
             <div>
               <p className="kicker">Структура сети</p>
-              <h2 id="graph-title">Направление переводов</h2>
+              <h2 id="graph-title" tabIndex={-1}>Направление переводов</h2>
             </div>
             <div className="view-tabs" role="group" aria-label="Область графа">
-              <button type="button" className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')} aria-pressed={view === 'overview'}>
+              <button type="button" className={view === 'overview' ? 'active' : ''} onClick={() => selectView('overview')} aria-pressed={view === 'overview'}>
                 Обзор
               </button>
-              <button type="button" className={view === 'cluster' ? 'active' : ''} onClick={() => cluster !== null && setView('cluster')} aria-pressed={view === 'cluster'} disabled={cluster === null}>
+              <button type="button" className={view === 'cluster' ? 'active' : ''} onClick={() => cluster !== null && selectView('cluster')} aria-pressed={view === 'cluster'} disabled={cluster === null}>
                 Кластер
               </button>
-              <button type="button" className={view === 'node' ? 'active' : ''} onClick={() => selectedGid && setView('node')} aria-pressed={view === 'node'} disabled={!selectedGid}>
+              <button type="button" className={view === 'node' ? 'active' : ''} onClick={() => selectedGid && selectView('node')} aria-pressed={view === 'node'} disabled={!selectedGid}>
                 Окрестность
               </button>
             </div>
@@ -303,7 +337,7 @@ export default function App() {
           </div>
         </section>
 
-        <aside className="right-panel" aria-label="Карточка выбранного клиента">
+        <aside id="client-card" className="right-panel" aria-label="Карточка выбранного клиента" tabIndex={-1}>
           {!selectedGid && <div className="detail-empty">
             <span className="detail-empty-symbol" aria-hidden="true">◎</span>
             <h2>Выберите узел</h2>
@@ -311,6 +345,10 @@ export default function App() {
           </div>}
           {detail?.status === 'loading' && <StatusMessage message="Загружаем карточку клиента…" />}
           {detail?.status === 'error' && <StatusMessage message={detail.message} retry={() => setRefresh((value) => value + 1)} />}
+          {outsideFilters && <div className="filter-context">
+            <p>Выбранный клиент не входит в текущий список по фильтрам. Его карточка сохранена.</p>
+            <button type="button" className="text-action" onClick={resetFilters}>Сбросить фильтры</button>
+          </div>}
           {detailData && <NodeCard detail={detailData} onSelect={chooseNode} />}
         </aside>
       </main>

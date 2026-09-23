@@ -194,6 +194,26 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
     })
   }
 
+  const isPinned = Boolean(pinnedEdge && pinnedEdge === focusedEdgeId)
+  const inspector = (focusedEdge || focusedNode) && <div className={`graph-inspector${isPinned ? ' is-pinned' : ''}`} role="status">
+    {focusedEdge ? <>
+      <strong title={`${focusedEdge.src} → ${focusedEdge.dst}`}>{focusedEdge.src} → {focusedEdge.dst}</strong>
+      <span>{money.format(focusedEdge.sum_kzt)} ₸ · Операций: {formatCount(focusedEdge.n_tx)}</span>
+      {isPinned && <button type="button" className="graph-inspector-close" onClick={() => {
+        setPinnedEdge(null)
+        setHoveredEdge(null)
+        setHoveredNode(null)
+        const select = document.getElementById('graph-edge-select')
+        const list = select?.closest('details')
+        if (list?.open) select?.focus()
+        else list?.querySelector('summary')?.focus()
+      }}>Снять выделение связи</button>}
+    </> : focusedNode && <>
+      <strong>gid {focusedNode.gid}</strong>
+      <span>{roleLabel[focusedNode.role]}</span>
+    </>}
+  </div>
+
   return <>
     {neighborhood && !waitingForNode && <div className="graph-toolbar">
       <span>Показано {formatCount(neighborhood.shownCounterparties)} из {formatCount(neighborhood.totalCounterparties)} доступных контрагентов</span>
@@ -211,23 +231,14 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
     <div className="graph-wrap">
       {waitingForNode
         ? <div className="graph-wait" role="status">Обновляем окрестность выбранного узла…</div>
-        : <div className="graph-canvas" ref={container} role="img" aria-label={`Схема сети: ${visibleNodes.length} узлов, ${visibleEdges.length} направленных связей. Узлы можно выбрать нажатием. Для клавиатуры используйте список приоритетов или связи в карточке.`} />}
+        : <div className="graph-canvas" ref={container} role="img" aria-label={`Схема сети: ${visibleNodes.length} узлов, ${visibleEdges.length} направленных связей. Узлы можно выбрать нажатием; полный список узлов и переводов доступен ниже графа.`} />}
       {!waitingForNode && <>
         <div className="graph-controls" aria-label="Масштаб графа">
           <button type="button" onClick={() => zoomBy(1.3)} aria-label="Увеличить граф">+</button>
           <button type="button" onClick={() => zoomBy(1 / 1.3)} aria-label="Уменьшить граф">−</button>
           <button type="button" onClick={() => { if (instance.current) fitGraph(instance.current) }} aria-label="Показать весь граф">⌖</button>
         </div>
-        {(focusedEdge || focusedNode) && <div className="graph-inspector" role="status">
-          {focusedEdge ? <>
-            <strong title={`${focusedEdge.src} → ${focusedEdge.dst}`}>{focusedEdge.src} → {focusedEdge.dst}</strong>
-            <span>{money.format(focusedEdge.sum_kzt)} ₸ · Операций: {formatCount(focusedEdge.n_tx)}</span>
-            {pinnedEdge === focusedEdgeId && <small>Связь выбрана · нажмите на фон для сброса</small>}
-          </> : focusedNode && <>
-            <strong>gid {focusedNode.gid}</strong>
-            <span>{roleLabel[focusedNode.role]}</span>
-          </>}
-        </div>}
+        {!isPinned && inspector}
         <div className="graph-legend" aria-label="Цвета ролей">
           {roles.map((role) => <span key={role}><i style={{ backgroundColor: roleColor[role] }} />{roleLabel[role]}</span>)}
           <span><i className="seed-mark" />Исходный клиент</span>
@@ -239,5 +250,42 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
       <span>Показано {formatCount(visibleNodes.length)} из {formatCount(data.total_nodes)} узлов · {formatCount(visibleEdges.length)} из {formatCount(data.total_edges)} связей</span>
       {data.truncated && <strong>Область ограничена 120 узлами; расчёты и поиск gid доступны для всей сети.</strong>}
     </div>}
+    {!waitingForNode && <details className="graph-access">
+      <summary>Узлы и связи списком</summary>
+      <div className="graph-access-fields">
+        <div>
+          <label htmlFor="graph-node-select">Выбрать узел</label>
+          <select
+            id="graph-node-select"
+            value={selectedGid && nodeById.has(selectedGid) ? selectedGid : ''}
+            onChange={(event) => { if (event.target.value) onSelect(event.target.value) }}
+          >
+            <option value="">Выберите узел</option>
+            {visibleNodes.map((node) => <option key={node.gid} value={node.gid}>
+              gid {node.gid} · {roleLabel[node.role]}
+            </option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="graph-edge-select">Выбрать перевод</label>
+          <select
+            id="graph-edge-select"
+            value={pinnedEdge && edgeById.has(pinnedEdge) ? pinnedEdge : ''}
+            disabled={visibleEdges.length === 0}
+            onChange={(event) => {
+              setPinnedEdge(event.target.value || null)
+              setHoveredEdge(null)
+              setHoveredNode(null)
+            }}
+          >
+            <option value="">{visibleEdges.length === 0 ? 'В этой области нет переводов' : 'Выберите перевод'}</option>
+            {visibleEdges.map((edge) => <option key={edgeId(edge)} value={edgeId(edge)}>
+              {edge.src} → {edge.dst} · {money.format(edge.sum_kzt)} ₸ · Операций: {formatCount(edge.n_tx)}
+            </option>)}
+          </select>
+        </div>
+      </div>
+    </details>}
+    {!waitingForNode && isPinned && inspector}
   </>
 }
