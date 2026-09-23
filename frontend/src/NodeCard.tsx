@@ -44,7 +44,7 @@ export default function NodeCard({ detail, onSelect }: Props) {
       {node.is_seed && <span>Исходный клиент</span>}
       {node.boundary && <span className="flag-warn">Граница 4-го колена</span>}
       <span>Кластер {node.cluster_id}</span>
-      <span>Колено {node.depth}</span>
+      {!node.boundary && <span>Колено {node.depth}</span>}
     </div>
 
     <div className="node-scores">
@@ -102,23 +102,32 @@ export default function NodeCard({ detail, onSelect }: Props) {
     <ConnectionList title="Входящие связи" links={incoming} onSelect={onSelect} />
     <ConnectionList title="Исходящие связи" links={outgoing} onSelect={onSelect} />
 
-    {next_steps.length > 0 && <section className="detail-section next-steps">
-      <h3>Что проверить дальше</h3>
+    {next_steps.length > 0 && <details className="detail-section next-steps">
+      <summary>Что проверить дальше</summary>
       <ul>{next_steps.map((item, index) => <li key={index}>{item}</li>)}</ul>
-    </section>}
+    </details>}
   </div>
 }
 
 function ConnectionList({ title, links, onSelect }: { title: string; links: LinkData[]; onSelect: (gid: string) => void }) {
+  const sorted = [...links].sort((a, b) => b.sum_kzt - a.sum_kzt || a.counterparty_gid.localeCompare(b.counterparty_gid))
+  const renderLinks = (items: LinkData[]) => <ul>
+    {items.map((link) => <li key={`${link.src}-${link.dst}`}>
+      <button type="button" onClick={() => onSelect(link.counterparty_gid)}>
+        <span><strong title={link.counterparty_gid}>{link.counterparty_gid}</strong><small>{roleLabel[link.role]}</small></span>
+        <span>{formatMoneyCompact(link.sum_kzt)}<small>Операций: {formatCount(link.n_tx)}</small></span>
+      </button>
+    </li>)}
+  </ul>
   return <section className="detail-section connections">
     <h3>{title} <span>{formatCount(links.length)}</span></h3>
-    {links.length === 0 ? <p className="muted">В наблюдаемой сети связей нет.</p> : <ul>
-      {links.map((link) => <li key={`${link.src}-${link.dst}`}>
-        <button type="button" onClick={() => onSelect(link.counterparty_gid)}>
-          <span><strong title={link.counterparty_gid}>{link.counterparty_gid}</strong><small>{roleLabel[link.role]}</small></span>
-          <span>{formatMoneyCompact(link.sum_kzt)}<small>{formatCount(link.n_tx)} операций</small></span>
-        </button>
-      </li>)}
-    </ul>}
+    {links.length === 0 ? <p className="muted">В наблюдаемой сети связей нет.</p> : <>
+      {links.length > 5 && <p className="connection-order">Сначала 5 крупнейших по сумме</p>}
+      {renderLinks(sorted.slice(0, 5))}
+      {links.length > 5 && <details>
+        <summary>Ещё {formatCount(links.length - 5)} связей</summary>
+        {renderLinks(sorted.slice(5))}
+      </details>}
+    </>}
   </section>
 }

@@ -122,6 +122,7 @@ export default function App() {
 
   function chooseNode(gid: string) {
     cancelPendingSearch()
+    setSearch('')
     setSelectedGid(gid)
     setView('node')
     setSearchError('')
@@ -174,6 +175,7 @@ export default function App() {
   const summaryData = summary.status === 'ready' ? summary.data : null
   const graphData = graph.status === 'ready' ? graph.data : null
   const detailData = detail?.status === 'ready' && detail.data.node.gid === selectedGid ? detail.data : null
+  const clusterForView = cluster ?? detailData?.node.cluster_id ?? null
   const currentCluster = clusters.status === 'ready' ? clusters.data.find((item) => item.cluster_id === cluster) : undefined
   const outsideFilters = detailData && ((role && detailData.node.role !== role)
     || (cluster !== null && detailData.node.cluster_id !== cluster))
@@ -195,12 +197,14 @@ export default function App() {
             {formatCount(summaryData.n_nodes)} клиентов · {formatCount(summaryData.n_edges)} связей
           </span>}
         </div>
-        <nav className="exports" aria-label="Экспорт результатов">
-          <span>Скачать CSV</span>
-          <a href="/api/exports/nodes_roles.csv" download>Роли узлов</a>
-          <a href="/api/exports/clusters.csv" download>Кластеры</a>
-          <a href="/api/exports/top_nodes.csv" download>Приоритеты</a>
-        </nav>
+        <details className="exports">
+          <summary>Скачать CSV</summary>
+          <nav aria-label="Экспорт результатов">
+            <a href="/api/exports/nodes_roles.csv" download>Роли узлов</a>
+            <a href="/api/exports/clusters.csv" download>Кластеры</a>
+            <a href="/api/exports/top_nodes.csv" download>Приоритеты</a>
+          </nav>
+        </details>
       </header>
 
       <nav className="compact-nav" aria-label="Разделы рабочей области">
@@ -217,7 +221,6 @@ export default function App() {
           <section className="search-section" aria-labelledby="search-title">
             <div className="section-heading">
               <h2 id="search-title" tabIndex={-1}>Найти клиента</h2>
-              <span>gid</span>
             </div>
             <form className="search-form" onSubmit={submitSearch}>
               <label className="sr-only" htmlFor="gid-search">Идентификатор клиента gid</label>
@@ -242,8 +245,9 @@ export default function App() {
             </form>
             {searchError && <p className="field-error" id={searchErrorId} role="alert">{searchError}</p>}
             {detailData && <p className="search-result">
-              Выбран клиент <span translate="no">{detailData.node.gid}</span>.{' '}
-              <a href="#node-card-title">К карточке клиента</a>
+              <a href="#node-card-title" aria-label={`Открыть карточку клиента ${detailData.node.gid}`}>
+                Карточка <span translate="no">…{detailData.node.gid.slice(-7)}</span> →
+              </a>
             </p>}
           </section>
 
@@ -252,9 +256,9 @@ export default function App() {
               <h2 id="priority-title">Приоритет проверки</h2>
               {list.status === 'ready' && <span>{formatCount(list.data.total)}</span>}
             </div>
-            <p className="section-note">Скор отражает структурные признаки, а не вероятность нарушения.</p>
+            <p className="section-note">Порядок проверки, не вероятность нарушения.</p>
             <div className="filter-row">
-              <label htmlFor="role-filter">Роль</label>
+              <label htmlFor="role-filter">Роль в списке</label>
               <select id="role-filter" value={role} onChange={(event) => {
                 cancelPendingSearch()
                 setRole(event.target.value as Role | '')
@@ -278,14 +282,13 @@ export default function App() {
               ? <StatusMessage message="По этим фильтрам клиентов нет. Выберите другую роль или кластер." />
               : <>
                 <ol className="priority-list">
-                  {list.data.items.map((node, index) => <li key={node.gid}>
+                  {list.data.items.map((node) => <li key={node.gid}>
                     <button
                       type="button"
                       className={`priority-item ${selectedGid === node.gid ? 'is-active' : ''}`}
                       onClick={() => chooseNode(node.gid)}
                       aria-current={selectedGid === node.gid ? 'true' : undefined}
                     >
-                      <span className="rank">{String(index + 1).padStart(2, '0')}</span>
                       <span className="priority-main">
                         <strong title={node.gid}>{node.gid}</strong>
                         <RoleTag role={node.role} />
@@ -295,7 +298,7 @@ export default function App() {
                   </li>)}
                 </ol>
                 {list.data.total > list.data.items.length && <p className="list-footnote">
-                  Показаны первые {list.data.items.length} из {formatCount(list.data.total)}. Любой gid доступен через поиск.
+                  Первые {list.data.items.length} из {formatCount(list.data.total)} · остальные доступны через поиск.
                 </p>}
               </>)}
           </section>
@@ -304,14 +307,13 @@ export default function App() {
         <section className="center-panel" aria-labelledby="graph-title">
           <div className="graph-heading">
             <div>
-              <p className="kicker">Структура сети</p>
               <h2 id="graph-title" tabIndex={-1}>Направление переводов</h2>
             </div>
             <div className="view-tabs" role="group" aria-label="Область графа">
               <button type="button" className={view === 'overview' ? 'active' : ''} onClick={() => selectView('overview')} aria-pressed={view === 'overview'}>
                 Обзор
               </button>
-              <button type="button" className={view === 'cluster' ? 'active' : ''} onClick={() => cluster !== null && selectView('cluster')} aria-pressed={view === 'cluster'} disabled={cluster === null}>
+              <button type="button" className={view === 'cluster' ? 'active' : ''} onClick={() => clusterForView !== null && selectCluster(String(clusterForView))} aria-pressed={view === 'cluster'} disabled={clusterForView === null} title={clusterForView !== null ? `Открыть кластер ${clusterForView}` : 'Сначала выберите клиента или кластер'}>
                 Кластер
               </button>
               <button type="button" className={view === 'node' ? 'active' : ''} onClick={() => selectedGid && selectView('node')} aria-pressed={view === 'node'} disabled={!selectedGid}>
@@ -331,10 +333,10 @@ export default function App() {
           {graphData && (graphData.nodes.length === 0
             ? <StatusMessage message="В этой области нет узлов. Вернитесь к обзору или выберите другой кластер." />
             : <Graph data={graphData} selectedGid={selectedGid} view={view} onSelect={chooseNode} />)}
-          <div className="data-caveat">
-            <strong>Границы данных</strong>
+          <details className="data-caveat">
+            <summary>Неполная выборка: до 4-го колена</summary>
             <p>Обход включает только исходящие переводы до 4-го колена. У узлов на границе отсутствие исходящих не доказывает, что деньги остались у них. Входящие переводы исходных клиентов вне выборки не видны.</p>
-          </div>
+          </details>
         </section>
 
         <aside id="client-card" className="right-panel" aria-label="Карточка выбранного клиента" tabIndex={-1}>
@@ -349,7 +351,7 @@ export default function App() {
             <p>Выбранный клиент не входит в текущий список по фильтрам. Его карточка сохранена.</p>
             <button type="button" className="text-action" onClick={resetFilters}>Сбросить фильтры</button>
           </div>}
-          {detailData && <NodeCard detail={detailData} onSelect={chooseNode} />}
+          {detailData && <NodeCard key={detailData.node.gid} detail={detailData} onSelect={chooseNode} />}
         </aside>
       </main>
       <footer className="app-footer">

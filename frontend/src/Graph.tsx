@@ -216,7 +216,7 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
 
   return <>
     {neighborhood && !waitingForNode && <div className="graph-toolbar">
-      <span>Показано {formatCount(neighborhood.shownCounterparties)} из {formatCount(neighborhood.totalCounterparties)} доступных контрагентов</span>
+      {!showAll && neighborhood.totalCounterparties > 20 && <span>20 крупнейших контрагентов по сумме переводов</span>}
       {neighborhood.totalCounterparties > 20 && <button type="button" onClick={() => {
         setExpandedGid(showAll ? null : selectedGid)
         setPinnedEdge(null)
@@ -225,7 +225,6 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
       }}>
         {showAll ? 'Только 20 крупнейших' : 'Показать всех'}
       </button>}
-      {!showAll && neighborhood.totalCounterparties > 20 && <small>20 крупнейших по сумме прямых переводов в обе стороны</small>}
       <span className="graph-directions">Входящие — слева · исходящие — справа · в обе стороны — снизу</span>
     </div>}
     <div className="graph-wrap">
@@ -242,7 +241,6 @@ export default function Graph({ data, selectedGid, view, onSelect }: Props) {
         <div className="graph-legend" aria-label="Цвета ролей">
           {roles.map((role) => <span key={role}><i style={{ backgroundColor: roleColor[role] }} />{roleLabel[role]}</span>)}
           <span><i className="seed-mark" />Исходный клиент</span>
-          <span className="legend-note">Полный gid — при наведении и в карточке</span>
         </div>
       </>}
     </div>
