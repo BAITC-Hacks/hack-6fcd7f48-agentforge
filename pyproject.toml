@@ -1,0 +1,19 @@
+[project]
+name = "money-graph"
+version = "0.1.0"
+description = "Local explainable AML graph analysis"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+  "pandas>=2.2,<3",
+  "pyarrow>=19,<25",
+  "networkx>=3.4,<4",
+  "pydantic>=2,<3",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+
+[tool.ruff]
+line-length = 100
