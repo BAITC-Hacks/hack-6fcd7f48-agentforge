@@ -432,11 +432,14 @@ def _prioritize(records: list[dict]) -> tuple[list[dict], list[dict]]:
             "role": n["role"],
             "priority_score": n["priority_score"],
             "why": (
-                f"Исходных клиентов с путями до узла — {n['seed_source_count']}; "
-                f"плательщиков — {n['in_degree']}; вход {_money_text(n['in_kzt'])}. "
-                f"Крупнейшему получателю отправлено {_number(n['largest_out_share'] * 100, 1)}% исходящей суммы. "
-                "Веса приоритета: пути 35%, плательщики 30%, вход 20%, концентрация пересылки 15%. "
-                f"{n['priority_reason']} Пути не доказывают происхождение конкретных денег."
+                f"{n['evidence']} Исходных клиентов с путями до узла — {n['seed_source_count']}. "
+                + (
+                    f"Из отправленного {_number(n['largest_out_share'] * 100, 1)}% "
+                    "ушло одному получателю. "
+                    if n["out_degree"] > 0
+                    else ""
+                )
+                + f"{n['priority_reason']} Пути не доказывают происхождение конкретных денег."
             ),
         }
         for i, n in enumerate(records[:100], 1)
